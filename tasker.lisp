@@ -1,0 +1,402 @@
+(defpackage #:cl-tasker
+  (:use #:cl :xml-emitter)
+  (:import-from :xml-emitter))
+(in-package :cl-tasker)
+
+(defun get-java-time ()
+  (+ (mod (get-internal-real-time) 1000) ; Close enough.
+     (* 1000 (- (get-universal-time) 2208988800))))
+
+;;; Make hash tables easier to create.
+(set-macro-character #\{
+ (lambda (str char)
+  (declare (ignore char)) ; Ignore me some warnings
+  (let
+   ((*readtable* (copy-readtable *readtable* nil))
+    (keep-going t))
+   (set-macro-character #\} (lambda (stream char)
+                             (declare (ignore char) (ignore stream))
+                             (setf keep-going nil)))
+   (let ((pairs (loop for key = (read str nil nil t)
+		   while keep-going
+		   for value = (read str nil nil t)
+		   collect (list key value)))
+	 (retn (gensym)))
+     `(let ((,retn (make-hash-table :test #'equal)))
+	,@(mapcar
+	   (lambda (pair)
+	     `(setf (gethash ,(car pair) ,retn) ,(cadr pair)))
+	   pairs)
+	,retn)))))
+
+(defparameter *action-codes*
+  {:FLASH 548
+
+  ;;---- Unimplemented below this line ----
+
+  :NONE -1 ;; Is this a noop?
+  :FIRST_PLUGIN_CODE 1000 ; higher are all plugins
+	
+  ;Deprecated
+  ;; Not sure what to do with these. I can't really test them?
+  :TEST_OLD 115
+  :TAKE_PHOTO_OLD 10  
+  :TAKE_PHOTO_SERIES_OLD 11  
+  :TAKE_PHOTO_CHRON_OLD 12  
+  :LIST_VARIABLES 594
+  :TEST_FILE_OLD 411
+  :SET_SPEECH_PARAMS 876
+  :NOTIFY 500	
+  :NOTIFY_LED_RED 510	
+  :NOTIFY_LED_GREEN 520
+  :PERMANENT_NOTIFY 777
+  :NOTIFY_VIBRATE 530
+  :NOTIFY_SOUND 540
+  :POPUP_IMAGE_TASK_NAMES 557	
+  :POPUP_TASK_ICONS 560
+  :POPUP_TASK_NAMES 565
+  :KEYGUARD_PATTERN 151
+
+  ; Active
+  :ANCHOR 300
+  :SET_SMS_APP 252
+  :SAY_AFTER 696  
+  :SHUT_UP 697
+  :TORCH 511	
+  :DPAD 701
+  :TYPE 702
+  :BUTTON 703
+  :NOTIFY_PLAIN 523
+  :NOTIFY_LED 525
+  :NOTIFY_VIBRATE_2 536
+  :NOTIFY_SOUND_2 538
+  :CANCEL_NOTIFY 779
+  :POPUP 550
+  :HTML_POPUP 941
+  :MENU 551
+  :POPUP_TASK_BUTTONS 552
+  :SET_ALARM 566
+  :START_TIMER 543
+  :CALENDAR_INSERT 567
+  :REBOOT 59
+  :VIBRATE 61
+  :MIDI_PLAY 156
+  :VIBRATE_PATTERN 62
+  :STATUS_BAR 512
+  :CLOSE_SYSTEM_DIALOGS 513
+  :MICROPHONE_MUTE 301
+  :VOLUME_ALARM 303
+  :VOLUME_RINGER 304
+  :VOLUME_NOTIFICATION 305
+  :VOLUME_CALL 306
+  :VOLUME_MUSIC 307
+  :VOLUME_SYSTEM 308
+  :VOLUME_DTMF 309
+  :VOLUME_BT_VOICE 311
+  :SILENT_MODE 310
+  :SOUND_EFFECTS_ENABLED 136
+  :HAPTIC_FEEDBACK 177
+  :SPEAKERPHONE_STATUS 254
+  :RINGER_VIBRATE 256
+  :NOTIFICATION_VIBRATE 258
+  :NOTIFICATION_PULSE 259
+  :DIALOG_SETTINGS 200
+  :DIALOG_ACCESSIBILITY_SETTINGS 236
+  :DIALOG_PRIVACY_SETTINGS 238
+  :DIALOG_AIRPLANE_MODE_SETTINGS 201
+  :DIALOG_ADD_ACCOUNT_SETTINGS 199
+  :DIALOG_APN_SETTINGS 202
+  :DIALOG_BATTERY_INFO_SETTINGS 251
+  :DIALOG_DATE_SETTINGS 203
+  :DIALOG_DEVICE_INFO_SETTINGS 198
+  :DIALOG_INTERNAL_STORAGE_SETTINGS 204
+  :DIALOG_DEVELOPMENT_SETTINGS 205
+  :DIALOG_WIFI_SETTINGS 206
+  :DIALOG_LOCATION_SOURCE_SETTINGS 208
+  :DIALOG_INPUT_METHOD_SETTINGS 210
+  :DIALOG_SYNC_SETTINGS 211
+  :DIALOG_NFC_SETTINGS 956
+  :DIALOG_NFC_SHARING_SETTINGS 957  
+  :DIALOG_NFC_PAYMENT_SETTINGS  958
+  :DIALOG_DREAM_SETTINGS 959 
+  :DIALOG_WIFI_IP_SETTINGS 212
+  :DIALOG_WIRELESS_SETTINGS 214
+  :DIALOG_APPLICATION_SETTINGS 216
+  :DIALOG_BLUETOOTH_SETTINGS 218
+  :DIALOG_ROAMING_SETTINGS 220
+  :DIALOG_DISPLAY_SETTINGS 222
+  :DIALOG_LOCALE_SETTINGS 224
+  :DIALOG_MANAGE_APPLICATION_SETTINGS 226
+  :DIALOG_MEMORY_CARD_SETTINGS 227
+  :DIALOG_NETWORK_OPERATOR_SETTINGS 228
+  :DIALOG_POWER_USAGE_SETTINGS 257
+  :DIALOG_QUICK_LAUNCH_SETTINGS 229
+  :DIALOG_SECURITY_SETTINGS 230
+  :DIALOG_SEARCH_SETTINGS 231
+  :DIALOG_SOUND_SETTINGS 232
+  :DIALOG_USER_DICTIONARY_SETTINGS 234
+  :INPUT_METHOD_SELECT 804
+  :POKE_DISPLAY 806
+  :SCREEN_BRIGHTNESS_AUTO 808	
+  :SCREEN_BRIGHTNESS 810	
+  :SCREEN_OFF_TIMEOUT 812
+  :ACCELEROMETER_ROTATION 822
+  :STAY_ON_WHILE_PLUGGED_IN 820
+  :KEYGUARD_ENABLED 150	
+  :LOCK 15  
+  :SYSTEM_LOCK 16  
+  :SHOW_SOFT_KEYBOARD 987  
+  :CAR_MODE 988
+  :NIGHT_MODE 989
+  :SET_LIGHT 999
+  :READ_BINARY 776
+  :WRITE_BINARY 775
+  :READ_LINE 415
+  :READ_PARA 416
+  :READ_FILE 417
+  :MOVE_FILE 400
+  :COPY_FILE 404
+  :COPY_DIR 405
+  :DELETE_FILE 406
+  :DELETE_DIR 408
+  :MAKE_DIR 409
+  :WRITE_TO_FILE 410
+  :LIST_FILES 412
+  :ZIP_FILE 420
+  :UNZIP_FILE 422
+  :VIEW_FILE 102
+  :BROWSE_FILES 900
+  :GET_FIX 902
+  :STOP_FIX 901
+  :GET_VOICE 903
+  :VOICE_COMMAND 904
+  :LOAD_IMAGE 188
+  :SAVE_IMAGE 187
+  :RESIZE_IMAGE 193
+  :ROTATE_IMAGE 191
+  :FLIP_IMAGE 190
+  :FILTER_IMAGE 185
+  :CROP_IMAGE 189
+  :TAKE_PHOTO_TWO 101
+  :ENCRYPT_FILE 434
+  :DECRYPT_FILE 435
+  :ENTER_PASSPHRASE 436  
+  :CLEAR_PASSPHRASE 437  
+  :SET_PASSPHRASE 423  
+  :ENCRYPT_DIR 428
+  :DECRYPT_DIR 429
+  :KILL_APP 18  
+  :LOAD_APP 20  
+  :LOAD_LAST_APP 22  
+  :SETCPU 915
+  :GO_HOME 25  
+  :WAIT 30  	
+  :WAIT_UNTIL 35  	
+  :IF 37  	
+  :ENDIF 38  	
+  :ELSE 43
+  :FOR 39  	
+  :ENDFOR 40  	
+  :SEARCH 100
+  :RUN_SCRIPT 112
+  :JAVASCRIPTLET 129
+  :JAVASCRIPT 131
+  :RUN_SHELL 123
+  :REMOUNT 124
+  :RETURN 126
+  :TEST_NET 341
+  :TEST_FILE 342
+  :TEST_MEDIA 343
+  :TEST_APP 344
+  :TEST_VARIABLE 345
+  :TEST_PHONE 346
+  :TEST_TASKER 347
+  :TEST_DISPLAY 348
+  :TEST_SYSTEM 349
+  :TEST_SCENE 194
+  :SCENE_ELEMENT_TEST 195
+  :SAY 559  
+  :SAY_TO_FILE 699  
+  :SEND_INTENT 877
+  :VIEW_URL 104
+  :SET_CLIPBOARD 105
+  :SET_WALLPAPER 109
+  :HTTP_GET 118
+  :HTTP_POST 116
+  :OPEN_MAP 119
+  :ANDROID_MEDIA_CONTROL 443  
+  :GRAB_MEDIA_BUTTON 490
+  :PLAY_RINGTONE 192  
+  :BEEP 171
+  :MORSE 172
+  :MUSIC_PLAY 445  
+  :MUSIC_PLAY_DIR 447  
+  :MUSIC_STOP 449  
+  :MUSIC_FORWARD 451  
+  :MUSIC_BACK 453  
+  :SCAN_CARD 459  
+  :RINGTONE 457  
+  :SOUND_RECORD 455  
+  :SOUND_RECORD_STOP 657  
+  :AUTO_SYNC 331	
+  :AIRPLANE_MODE 333	
+  :GPS_STATUS 332	
+  :BLUETOOTH_STATUS 294
+  :BLUETOOTH_NAME 295
+  :BLUETOOTH_SCO 296
+  :BLOCK_CALLS 95
+  :DIVERT_CALLS 97
+  :REVERT_CALLS 99
+  :CONTACTS 909
+  :CALL_LOG 910
+  :EMAIL_COMPOSE 125
+  :SMS_COMPOSE 250
+  :MMS_COMPOSE 111
+  :TETHER_WIFI 113
+  :TETHER_USB 114
+  :TAKE_CALL 731
+  :RADIO_STATUS 732
+  :END_CALL 733
+  :SILENCE_RINGER 734
+  :MOBILE_NETWORK_MODE 735
+  :MAKE_PHONECALL 90
+  :MOBILE_DATA_STATUS 450
+  :MOBILE_DATA_STATUS_DIRECT 433
+  :SEND_TEXT_SMS 41
+  :SEND_DATA_SMS 42
+  :AIRPLANE_RADIOS 323	
+  :WIFI_STATUS 425	
+  :WIFI_NET_CONTROL 426	
+  :WIFI_SLEEP_POLICY 427	
+  :WIMAX_STATUS 439	
+  :SET_TIMEZONE 440
+  :CHANGE_ICON_SET 140
+  :CHANGE_WIDGET_TEXT 155
+  :CHANGE_WIDGET_ICON 152
+  :TOGGLE_PROFILE 159
+  :QUERY_ACTION 134
+  :RUN_TASK 130
+  :GOTO 135
+  :STOP 137
+  :DISABLE_TASKER 139
+  :TASKER_LOGGING 283
+  :SET_TASKER_ICON 138
+  :SET_TASKER_PREF 133
+  :CREATE_SCENE 46
+  :SHOW_SCENE 47
+  :HIDE_SCENE 48
+  :DESTROY_SCENE 49
+  :SCENE_ELEMENT_VALUE 50
+  :SCENE_ELEMENT_FOCUS 68
+  :SCENE_ELEMENT_TEXT 51
+  :SCENE_ELEMENT_TEXT_COLOUR 54
+  :SCENE_ELEMENT_TEXT_SIZE 71
+  :SCENE_ELEMENT_BACKGROUND_COLOUR 55
+  :SCENE_ELEMENT_BORDER 56
+  :SCENE_ELEMENT_POSITION 57
+  :SCENE_ELEMENT_SIZE 58
+  :SCENE_ELEMENT_ADD_GEOMARKER 60
+  :SCENE_ELEMENT_DELETE_GEOMARKER 63
+  :SCENE_ELEMENT_WEB_CONTROL 53
+  :SCENE_ELEMENT_MAP_CONTROL 64
+  :SCENE_ELEMENT_VISIBILITY 65
+  :SCENE_ELEMENT_CREATE 69
+  :SCENE_ELEMENT_DESTROY 73
+  :SCENE_ELEMENT_IMAGE 66
+  :SCENE_ELEMENT_DEPTH 67
+  :ARRAY_PUSH 355
+  :ARRAY_PROCESS 369
+  :ARRAY_POP 356
+  :ARRAY_CLEAR 357
+  :SET_VARIABLE 547
+  :SET_VARIABLE_RANDOM 545
+  :INC_VARIABLE 888
+  :DEC_VARIABLE 890
+  :CLEAR_VARIABLE 549
+  :SPLIT_VARIABLE 590
+  :JOIN_VARIABLE 592
+  :QUERY_VARIABLE 595
+  :CONVERT_VARIABLE 596
+  :SECTION_VARIABLE 597
+  :SEARCH_REPLACE_VARIABLE 598
+  :ASTRID 371
+  :BEYONDPOD 555
+  :DAILYROADS 568
+  :DUETODAY 599
+  :ANDROID_NOTIFIER 558
+  :NEWSROB 556
+  :OFFICETALK 643
+  :JUICE_DEFENDER_DATA 456
+  :JUICE_DEFENDER_STATUS 395
+  :SLEEPBOT 442
+  :SMSBACKUP 553
+  :TESLALED 444
+  :WIDGETLOCKER 458
+  :GENTLEALARM 911
+  :ZOOM_ELEMENT_STATE 793 
+  :ZOOM_ELEMENT_POSITION 794
+  :ZOOM_ELEMENT_SIZE 795
+  :ZOOM_ELEMENT_VISIBILITY 721
+  :ZOOM_ELEMENT_ALPHA 760
+  :ZOOM_ELEMENT_IMAGE 761
+  :ZOOM_ELEMENT_COLOUR 762
+  :ZOOM_ELEMENT_TEXT 740
+  :ZOOM_ELEMENT_TEXT_SIZE 741
+  :ZOOM_ELEMENT_TEXT_COLOUR 742})
+
+(defparameter *ifops*
+  {'-    0
+   '~    1
+   '!~   2
+   '<    3
+   '>    4
+   '=    5
+   '!=   6
+   'even 7
+   'odd  8
+   'set  9
+   '!set 10
+   '~R   11
+   '!~R  12})
+
+(defmacro action (action-code action-id ifclause &rest arglist)
+  "Given an Action Code, an ID, and the arguments, output the XML for that Action."
+  (let ((c action-code)
+	(id action-id)
+	(ifop (car ifclause))
+	(lhs (cadr ifclause))
+	(rhs (caddr ifclause))
+	(args arglist))
+    `(with-tag ("Action" `(("sr" ,,(format nil "act~A" id))
+			   ("ve" 3)))
+       (simple-tag "code" ,c)
+       ,(let ((op (gethash ifop *ifops*)))
+	     (if op
+		 `(emit-simple-tags :lhs ,lhs
+				    :op ,(gethash ifop *ifops*)
+				    :rhs ,rhs)
+		 (warn "Your if clause countained a wrong operation. Try prepending it with :.")))
+       (loop for arg in ',args
+	  for i from 0 to ,(length args)
+	  do (cond ((stringp arg)
+		    (simple-tag "Str"
+				arg
+				`(("sr" ,(format nil "arg~A" i))
+				  ("ve" 3))))
+		   ((or (typep arg 'boolean) (integerp arg))
+		    (simple-tag "Int"
+				""
+				`(("sr" ,(format nil "arg~A" i))
+				  ("val" ,(cond ((integerp arg) arg)
+						(arg 1)
+						(t 0))))))
+		   (t (princ (format nil "Don't know how to handle variable ~A of type ~a" arg (type-of arg)))))))))
+
+(defmacro flash (str &key ((:if ifclause) nil) (id 0) (long nil))
+  `(action (gethash :flash *action-codes*) ,id ,ifclause ,str ,long))
+
+;; (defun tasker-task (c &optional (id 1) &rest args)
+;;   (with-tag ("Task" '(("sr" (format nil "task~A" id))))
+;;     (emit-simple-tags "cdate" (get-java-time)
+;; 		      "edate" (get-java-time)
+;; 		      "id" id)))
