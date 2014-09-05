@@ -13,7 +13,7 @@ It turns this:
 ```
 
 Into this:
-```XML
+```xml
 <TaskerData sr="" dvi="1" tv="1.6u2">
   <Task sr="task47">
     <cdate>1409519732766</cdate>
@@ -31,7 +31,7 @@ Into this:
     </Action>
   </Task>
 </TaskerData>
-'''
+```
 
 ## So, how much is done?
 
