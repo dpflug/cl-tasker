@@ -1,6 +1,8 @@
 (defpackage #:cl-tasker
-  (:use #:cl :xml-emitter)
-  (:import-from :xml-emitter))
+  (:use #:cl #:xml-emitter)
+  (:import-from #:xml-emitter)
+  (:export :flash
+	   :tasker-data))
 (in-package :cl-tasker)
 
 (defun get-java-time ()
@@ -359,23 +361,26 @@
    '~R   11
    '!~R  12})
 
-(defmacro action (action-code action-id ifclause &rest arglist)
-  "Given an Action Code, an ID, and the arguments, output the XML for that Action."
+(defmacro action (action-code action-id ifclause label &rest arglist)
+  ""
   (let ((c action-code)
 	(id action-id)
 	(ifop (car ifclause))
 	(lhs (cadr ifclause))
 	(rhs (caddr ifclause))
 	(args arglist))
-    `(with-tag ("Action" `(("sr" ,,(format nil "act~A" id))
+    `(with-tag ("Action" '(("sr" ,(format nil "act~A" id))
 			   ("ve" 3)))
        (simple-tag "code" ,c)
        ,(let ((op (gethash ifop *ifops*)))
-	     (if op
-		 `(emit-simple-tags :lhs ,lhs
-				    :op ,(gethash ifop *ifops*)
-				    :rhs ,rhs)
-		 (warn "Your if clause countained a wrong operation. Try prepending it with :.")))
+	     (cond (op
+		    `(emit-simple-tags :lhs ,lhs
+				       :op ,(gethash ifop *ifops*)
+				       :rhs ,rhs))
+		   ((and ifop (not op))
+		    (warn "Your if clause countained a wrong operation. Try prepending it with :."))))
+       ,(if label
+	   `(simple-tag "label" ,label))
        (loop for arg in ',args
 	  for i from 0 to ,(length args)
 	  do (cond ((stringp arg)
@@ -392,11 +397,13 @@
 						(t 0))))))
 		   (t (princ (format nil "Don't know how to handle variable ~A of type ~a" arg (type-of arg)))))))))
 
-(defmacro flash (str &key ((:if ifclause) nil) (id 0) (long nil))
-  `(action (gethash :flash *action-codes*) ,id ,ifclause ,str ,long))
+(defmacro flash (str &key ((:if ifclause) nil) (id 0) (label nil) (long nil))
+  `(action (gethash :flash *action-codes*) ,id ,ifclause ,label ,str ,long))
 
-;; (defun tasker-task (c &optional (id 1) &rest args)
-;;   (with-tag ("Task" '(("sr" (format nil "task~A" id))))
-;;     (emit-simple-tags "cdate" (get-java-time)
-;; 		      "edate" (get-java-time)
-;; 		      "id" id)))
+(defmacro tasker-data (&body body)
+  `(with-tag ("TaskerData" '(("sr" "")
+			    ("dvi" 1)
+			    ("tv" "1.6u2")))
+     ,@(loop for (f . args) in body
+	for i from 0 to (length body)
+	  collect `(,f ,@args :id ,i))))
